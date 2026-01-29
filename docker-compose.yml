@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: federated_learning_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/database:/app/backend/database
+      - ./backend/datasets:/app/backend/datasets
+      - ./backend/templates:/app/backend/templates
+      - ./backend/static:/app/backend/static
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doctor Dashboard - Federated Learning System</title>
+    <link rel="stylesheet" href="/static/css/global.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="dashboard-header">
+            <div>
+                <h1>Doctor Dashboard</h1>
+                <p class="subtitle">Patient Review & Clinical Insights</p>
+            </div>
+            <a href="/" class="btn btn-primary">← Back to Home</a>
+        </header>
+
+        <div class="dashboard">
+            <!-- High Risk Patients -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">High-Risk Patients</h2>
+                    <button class="btn btn-primary" onclick="loadDashboard()">Refresh</button>
+                </div>
+                <div id="high-risk-patients">
+                    <p>Loading high-risk patients...</p>
+                </div>
+            </div>
+
+            <!-- Recent Diagnoses -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Recent Diagnoses</h2>
+                </div>
+                <div id="recent-diagnoses">
+                    <p>Loading recent diagnoses...</p>
+                </div>
+            </div>
+
+            <!-- Patient Insights -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Patient Insights</h2>
+                </div>
+                <div id="patient-insights">
+                    <p>Select a patient to view insights</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api';
+
+        async function loadDashboard() {
+            try {
+                const response = await fetch(`${API_URL}/doctors/dashboard`);
+                const data = await response.json();
+
+                // Display high-risk patients
+                if (data.high_risk_patients.length === 0) {
+                    document.getElementById('high-risk-patients').innerHTML = '<p>No high-risk patients at this time.</p>';
+                } else {
+                    let html = '<table><thead><tr><th>Patient</th><th>Age</th><th>CVD</th><th>Parkinson\'s</th><th>Diabetes</th><th>Date</th><th>Action</th></tr></thead><tbody>';
+                    data.high_risk_patients.forEach(patient => {
+                        html += `
+                            <tr>
+                                <td>${patient.patient_name}</td>
+                                <td>${patient.age}</td>
+                                <td><span class="risk-badge ${getRiskClass(patient.cvd_risk)}">${(patient.cvd_risk * 100).toFixed(0)}%</span></td>
+                                <td><span class="risk-badge ${getRiskClass(patient.parkinsons_risk)}">${(patient.parkinsons_risk * 100).toFixed(0)}%</span></td>
+                                <td><span class="risk-badge ${getRiskClass(patient.diabetes_risk)}">${(patient.diabetes_risk * 100).toFixed(0)}%</span></td>
+                                <td>${new Date(patient.created_at).toLocaleDateString()}</td>
+                                <td><button class="btn btn-primary" onclick="viewPatient(${patient.patient_id})">View</button></td>
+                            </tr>
+                        `;
+                    });
+                    html += '</tbody></table>';
+                    document.getElementById('high-risk-patients').innerHTML = html;
+                }
+
+                // Display recent diagnoses
+                if (data.recent_diagnoses.length === 0) {
+                    document.getElementById('recent-diagnoses').innerHTML = '<p>No recent diagnoses.</p>';
+                } else {
+                    let html = '<table><thead><tr><th>Patient</th><th>Age</th><th>CVD</th><th>Parkinson\'s</th><th>Diabetes</th><th>Date</th></tr></thead><tbody>';
+                    data.recent_diagnoses.slice(0, 10).forEach(patient => {
+                        html += `
+                            <tr>
+                                <td>${patient.patient_name}</td>
+                                <td>${patient.age}</td>
+                                <td>${(patient.cvd_risk * 100).toFixed(0)}%</td>
+                                <td>${(patient.parkinsons_risk * 100).toFixed(0)}%</td>
+                                <td>${(patient.diabetes_risk * 100).toFixed(0)}%</td>
+                                <td>${new Date(patient.created_at).toLocaleDateString()}</td>
+                            </tr>
+                        `;
+                    });
+                    html += '</tbody></table>';
+                    document.getElementById('recent-diagnoses').innerHTML = html;
+                }
+            } catch (error) {
+                document.getElementById('high-risk-patients').innerHTML = `<p class="text-danger">Error loading dashboard</p>`;
+            }
+        }
+
+        async function viewPatient(patientId) {
+            try {
+                const response = await fetch(`${API_URL}/doctors/patients/${patientId}/insights`);
+                const data = await response.json();
+
+                let html = '<h3>Patient Information</h3>';
+                html += `<p><strong>Name:</strong> ${data.patient.name}</p>`;
+                html += `<p><strong>Age:</strong> ${data.patient.age}</p>`;
+                html += `<p><strong>Medical History:</strong> ${data.patient.medical_history || 'None'}</p>`;
+
+                if (data.latest_diagnosis) {
+                    html += '<h3 style="margin-top: 1.5rem">Latest Diagnosis</h3>';
+                    html += '<div class="info-grid">';
+                    html += `
+                        <div class="info-card">
+                            <h4>CVD Risk</h4>
+                            <p style="font-size: 2rem; font-weight: bold">${(data.latest_diagnosis.cvd_risk * 100).toFixed(1)}%</p>
+                        </div>
+                        <div class="info-card">
+                            <h4>Parkinson's Risk</h4>
+                            <p style="font-size: 2rem; font-weight: bold">${(data.latest_diagnosis.parkinsons_risk * 100).toFixed(1)}%</p>
+                        </div>
+                        <div class="info-card">
+                            <h4>Diabetes Risk</h4>
+                            <p style="font-size: 2rem; font-weight: bold">${(data.latest_diagnosis.diabetes_risk * 100).toFixed(1)}%</p>
+                        </div>
+                    `;
+                    html += '</div>';
+
+                    if (data.explanations.length > 0) {
+                        html += '<h3 style="margin-top: 1.5rem">Explanations</h3>';
+                        data.explanations.forEach(exp => {
+                            html += `<p><strong>${exp.modality.toUpperCase()}:</strong> ${exp.natural_language}</p>`;
+                        });
+                    }
+
+                    html += `<button class="btn btn-success" style="margin-top: 1rem" onclick="submitFeedback(${data.latest_diagnosis.id})">Submit Feedback</button>`;
+                }
+
+                document.getElementById('patient-insights').innerHTML = html;
+            } catch (error) {
+                document.getElementById('patient-insights').innerHTML = `<p class="text-danger">Error loading patient insights</p>`;
+            }
+        }
+
+        function submitFeedback(diagnosisId) {
+            alert(`Feedback form for diagnosis ${diagnosisId} would open here.`);
+        }
+
+        function getRiskClass(risk) {
+            if (risk < 0.3) return 'risk-low';
+            if (risk < 0.7) return 'risk-moderate';
+            return 'risk-high';
+        }
+
+        // Load dashboard on page load
+        window.addEventListener('DOMContentLoaded', loadDashboard);
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,24 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.10.0
+python-multipart==0.0.17
+
+# Database
+aiosqlite==0.20.0
+
+# ML & Data Processing (CPU-only, pre-built wheels for Python 3.13)
+torch==2.10.0
+# Using latest numpy with pre-built wheels
+# Note: Some advanced features may require manual installation
+pandas==2.2.3
+scikit-learn==1.6.0
+
+# Utilities
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.1
+jinja2==3.1.4
+
+# Note: scipy and librosa removed due to compilation requirements
+# The system will work without advanced signal processing
+# If needed, install scipy separately: brew install gcc && pip install scipy

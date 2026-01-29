@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Federated Learning System</title>
+    <link rel="stylesheet" href="/static/css/global.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="dashboard-header">
+            <div>
+                <h1>Admin Dashboard</h1>
+                <p class="subtitle">System Monitoring & Federated Learning</p>
+            </div>
+            <a href="/" class="btn btn-primary">← Back to Home</a>
+        </header>
+
+        <div class="dashboard">
+            <!-- System Stats -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">System Statistics</h2>
+                    <button class="btn btn-primary" onclick="loadStats()">Refresh</button>
+                </div>
+                <div id="system-stats">
+                    <p>Loading system statistics...</p>
+                </div>
+            </div>
+
+            <!-- Federated Learning Status -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Federated Learning</h2>
+                    <button class="btn btn-success" onclick="startFederatedRound()">Start New Round</button>
+                </div>
+                <div id="federated-status">
+                    <p>Loading federated learning status...</p>
+                </div>
+            </div>
+
+            <!-- Dataset Status -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Dataset Status</h2>
+                </div>
+                <div id="dataset-status">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Dataset</th>
+                                <th>Modality</th>
+                                <th>Status</th>
+                                <th>Client ID</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>PTB-XL</td>
+                                <td>ECG</td>
+                                <td><span class="risk-badge risk-low">Active</span></td>
+                                <td>client_0</td>
+                            </tr>
+                            <tr>
+                                <td>UCI Parkinson's</td>
+                                <td>Voice</td>
+                                <td><span class="risk-badge risk-low">Active</span></td>
+                                <td>client_1</td>
+                            </tr>
+                            <tr>
+                                <td>HandPD (Synthetic)</td>
+                                <td>Handwriting</td>
+                                <td><span class="risk-badge risk-low">Active</span></td>
+                                <td>client_2</td>
+                            </tr>
+                            <tr>
+                                <td>WESAD</td>
+                                <td>Wearable</td>
+                                <td><span class="risk-badge risk-low">Active</span></td>
+                                <td>client_3</td>
+                            </tr>
+                            <tr>
+                                <td>OhioT1DM</td>
+                                <td>Glucose</td>
+                                <td><span class="risk-badge risk-low">Active</span></td>
+                                <td>client_4</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api';
+
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_URL}/federated/stats`);
+                const data = await response.json();
+
+                let html = '<div class="info-grid">';
+                html += `
+                    <div class="info-card">
+                        <h4>Total FL Rounds</h4>
+                        <p style="font-size: 2rem; font-weight: bold; color: var(--primary)">${data.total_rounds}</p>
+                    </div>
+                    <div class="info-card">
+                        <h4>Total Updates</h4>
+                        <p style="font-size: 2rem; font-weight: bold; color: var(--success)">${data.total_updates}</p>
+                    </div>
+                    <div class="info-card">
+                        <h4>Active Clients</h4>
+                        <p style="font-size: 2rem; font-weight: bold; color: var(--info)">5</p>
+                    </div>
+                `;
+                html += '</div>';
+
+                if (data.latest_round) {
+                    html += '<h3 style="margin-top: 1.5rem">Latest Round</h3>';
+                    html += `<p><strong>Round Number:</strong> ${data.latest_round.round_number}</p>`;
+                    html += `<p><strong>Status:</strong> <span class="risk-badge risk-low">${data.latest_round.status}</span></p>`;
+                    if (data.latest_round.global_loss) {
+                        html += `<p><strong>Global Loss:</strong> ${data.latest_round.global_loss.toFixed(4)}</p>`;
+                    }
+                    if (data.latest_round.global_accuracy) {
+                        html += `<p><strong>Global Accuracy:</strong> ${(data.latest_round.global_accuracy * 100).toFixed(2)}%</p>`;
+                    }
+                }
+
+                document.getElementById('system-stats').innerHTML = html;
+            } catch (error) {
+                document.getElementById('system-stats').innerHTML = '<p class="text-danger">Error loading statistics</p>';
+            }
+        }
+
+        async function loadFederatedStatus() {
+            try {
+                const response = await fetch(`${API_URL}/federated/stats`);
+                const data = await response.json();
+
+                let html = '';
+
+                if (data.latest_round) {
+                    html += `
+                        <div class="info-card">
+                            <h4>Current Round</h4>
+                            <p style="font-size: 1.5rem; font-weight: bold">#${data.latest_round.round_number}</p>
+                            <p><strong>Status:</strong> ${data.latest_round.status}</p>
+                            <p><strong>Clients:</strong> ${data.latest_round.num_clients || 5}</p>
+                        </div>
+                    `;
+
+                    if (data.latest_round.privacy_epsilon) {
+                        html += `
+                            <div class="info-card" style="margin-top: 1rem">
+                                <h4>Privacy Budget</h4>
+                                <p><strong>ε (epsilon):</strong> ${data.latest_round.privacy_epsilon.toFixed(2)}</p>
+                                <p><strong>δ (delta):</strong> ${data.latest_round.privacy_delta.toExponential(2)}</p>
+                            </div>
+                        `;
+                    }
+                } else {
+                    html = '<p>No federated learning rounds started yet.</p>';
+                }
+
+                document.getElementById('federated-status').innerHTML = html;
+            } catch (error) {
+                document.getElementById('federated-status').innerHTML = '<p class="text-danger">Error loading federated status</p>';
+            }
+        }
+
+        async function startFederatedRound() {
+            if (!confirm('Start a new federated learning round?')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/federated/rounds/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ num_clients: 5 })
+                });
+                const data = await response.json();
+
+                alert(`Federated learning round ${data.round_number} started successfully!`);
+                loadStats();
+                loadFederatedStatus();
+            } catch (error) {
+                alert('Error starting federated round: ' + error.message);
+            }
+        }
+
+        // Load data on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadFederatedStatus();
+        });
+    </script>
+</body>
+
+</html>

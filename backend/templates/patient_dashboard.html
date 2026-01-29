@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patient Dashboard - Federated Learning System</title>
+    <link rel="stylesheet" href="/static/css/global.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="dashboard-header">
+            <div>
+                <h1>Patient Dashboard</h1>
+                <p class="subtitle">Your Health Insights</p>
+            </div>
+            <a href="/" class="btn btn-primary">← Back to Home</a>
+        </header>
+
+        <div class="dashboard">
+            <!-- Patient Info Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Patient Information</h2>
+                    <button class="btn btn-primary" onclick="loadPatientData()">Refresh</button>
+                </div>
+                <div id="patient-info">
+                    <p>Loading patient information...</p>
+                </div>
+            </div>
+
+            <!-- Devices Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Paired Devices</h2>
+                    <button class="btn btn-success" onclick="showPairDeviceModal()">+ Pair Device</button>
+                </div>
+                <div id="devices-list">
+                    <p>Loading devices...</p>
+                </div>
+            </div>
+
+            <!-- Latest Diagnosis Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Latest Diagnosis</h2>
+                    <button class="btn btn-primary" onclick="runDiagnosis()">Run New Diagnosis</button>
+                </div>
+                <div id="diagnosis-result">
+                    <p>No diagnosis available. Click "Run New Diagnosis" to start.</p>
+                </div>
+            </div>
+
+            <!-- Explanation Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Diagnosis Explanation</h2>
+                </div>
+                <div id="explanation-text">
+                    <p>Explanations will appear here after diagnosis.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const API_URL = 'http://localhost:8000/api';
+        const PATIENT_ID = 1; // Demo patient ID
+        let diagnosisCharts = {};
+
+        async function loadPatientData() {
+            try {
+                const response = await fetch(`${API_URL}/patients/${PATIENT_ID}`);
+                const data = await response.json();
+
+                document.getElementById('patient-info').innerHTML = `
+                    <p><strong>Name:</strong> ${data.name}</p>
+                    <p><strong>Age:</strong> ${data.age}</p>
+                    <p><strong>Privacy Consent:</strong> ${data.consent_privacy ? '✅ Yes' : '❌ No'}</p>
+                    <p><strong>Federated Learning:</strong> ${data.consent_federated_learning ? '✅ Enrolled' : '❌ Not enrolled'}</p>
+                `;
+            } catch (error) {
+                document.getElementById('patient-info').innerHTML = `<p class="text-danger">Error loading patient data</p>`;
+            }
+        }
+
+        async function loadDevices() {
+            try {
+                const response = await fetch(`${API_URL}/patients/${PATIENT_ID}/devices`);
+                const devices = await response.json();
+
+                if (devices.length === 0) {
+                    document.getElementById('devices-list').innerHTML = '<p>No devices paired yet.</p>';
+                    return;
+                }
+
+                let html = '<table><thead><tr><th>Device Type</th><th>Dataset</th><th>Status</th><th>Last Sync</th></tr></thead><tbody>';
+                devices.forEach(device => {
+                    const statusClass = device.status === 'active' ? 'risk-low' : 'risk-moderate';
+                    html += `
+                        <tr>
+                            <td>${device.device_type.toUpperCase()}</td>
+                            <td>${device.dataset_name}</td>
+                            <td><span class="risk-badge ${statusClass}">${device.status}</span></td>
+                            <td>${new Date(device.last_sync).toLocaleString()}</td>
+                        </tr>
+                    `;
+                });
+                html += '</tbody></table>';
+
+                document.getElementById('devices-list').innerHTML = html;
+            } catch (error) {
+                document.getElementById('devices-list').innerHTML = '<p class="text-danger">Error loading devices</p>';
+            }
+        }
+
+        async function runDiagnosis() {
+            document.getElementById('diagnosis-result').innerHTML = '<div class="spinner"></div><p style="text-align:center">Running multi-modal diagnosis...</p>';
+
+            try {
+                const response = await fetch(`${API_URL}/devices/diagnose/${PATIENT_ID}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                // Display risks
+                let html = '<div class="info-grid">';
+                html += `
+                    <div class="info-card">
+                        <h4>CVD Risk</h4>
+                        <p style="font-size: 2rem; font-weight: bold; color: ${getRiskColor(result.risks.cvd)}">${(result.risks.cvd * 100).toFixed(1)}%</p>
+                        <span class="risk-badge ${getRiskClass(result.risks.cvd)}">${getRiskLevel(result.risks.cvd)}</span>
+                    </div>
+                    <div class="info-card">
+                        <h4>Parkinson's Risk</h4>
+                        <p style="font-size: 2rem; font-weight: bold; color: ${getRiskColor(result.risks.parkinsons)}">${(result.risks.parkinsons * 100).toFixed(1)}%</p>
+                        <span class="risk-badge ${getRiskClass(result.risks.parkinsons)}">${getRiskLevel(result.risks.parkinsons)}</span>
+                    </div>
+                    <div class="info-card">
+                        <h4>Diabetes Risk</h4>
+                        <p style="font-size: 2rem; font-weight: bold; color: ${getRiskColor(result.risks.diabetes)}">${(result.risks.diabetes * 100).toFixed(1)}%</p>
+                        <span class="risk-badge ${getRiskClass(result.risks.diabetes)}">${getRiskLevel(result.risks.diabetes)}</span>
+                    </div>
+                `;
+                html += '</div>';
+
+                // Visualization Section
+                html += '<div style="margin-top: 2rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">';
+
+                // 1. Attention Weights Chart
+                html += `
+                    <div class="card" style="box-shadow: none; border: 1px solid #e5e7eb;">
+                        <h4 style="margin-bottom: 1rem;">Modality Importance</h4>
+                        <canvas id="attentionChart"></canvas>
+                    </div>
+                `;
+
+                // 2. ECG Chart (if available)
+                if (result.visualization_data && result.visualization_data.ecg) {
+                    html += `
+                        <div class="card" style="box-shadow: none; border: 1px solid #e5e7eb;">
+                            <h4 style="margin-bottom: 1rem;">ECG Analysis (First 500 samples)</h4>
+                            <canvas id="ecgChart"></canvas>
+                        </div>
+                    `;
+                }
+
+                // 3. Glucose Chart (if available)
+                if (result.visualization_data && result.visualization_data.glucose) {
+                    html += `
+                        <div class="card" style="box-shadow: none; border: 1px solid #e5e7eb;">
+                            <h4 style="margin-bottom: 1rem;">Glucose Trend (Normalized)</h4>
+                            <canvas id="glucoseChart"></canvas>
+                        </div>
+                    `;
+                }
+
+                // 4. Handwriting Chart (if available)
+                if (result.visualization_data && result.visualization_data.handwriting) {
+                    html += `
+                        <div class="card" style="box-shadow: none; border: 1px solid #e5e7eb;">
+                            <h4 style="margin-bottom: 1rem;">Handwriting Pattern</h4>
+                            <canvas id="handwritingChart"></canvas>
+                        </div>
+                    `;
+                }
+
+                html += '</div>'; // End grid
+
+                // Display explanation
+                const explanation = result.explanations.summary;
+                html += `
+                <div style="margin-top: 2rem; padding: 1.5rem; background: #f9fafb; border-radius: 8px;">
+                    <h3 style="margin-bottom: 1rem">AI Explanation</h3>
+                    <p style="font-size: 1.125rem; line-height: 1.8; color: #374151">${explanation}</p>
+                    <h4 style="margin-top: 1.5rem; color: #1f2937">Recommendations</h4>
+                    <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
+                        ${result.explanations.recommendations.map(rec => `<li style="margin-bottom: 0.5rem; color: #4b5563">${rec}</li>`).join('')}
+                    </ul>
+                </div>
+                `;
+
+                document.getElementById('diagnosis-result').innerHTML = html;
+
+                // Render Charts
+                renderCharts(result);
+
+            } catch (error) {
+                console.error(error);
+                document.getElementById('diagnosis-result').innerHTML = `<p class="text-danger">Error running diagnosis: ${error.message}</p>`;
+            }
+        }
+
+        function renderCharts(result) {
+            // Cleanup old charts
+            Object.values(diagnosisCharts).forEach(chart => chart.destroy());
+            diagnosisCharts = {};
+
+            // 1. Attention Radar Chart
+            const ctxAttention = document.getElementById('attentionChart').getContext('2d');
+            const dataViz = result.visualization_data || {};
+
+            diagnosisCharts.attention = new Chart(ctxAttention, {
+                type: 'radar',
+                data: {
+                    labels: Object.keys(result.attention_weights).map(k => k.toUpperCase()),
+                    datasets: [{
+                        label: 'Contribution',
+                        data: Object.values(result.attention_weights),
+                        fill: true,
+                        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                        borderColor: 'rgb(59, 130, 246)',
+                        pointBackgroundColor: 'rgb(59, 130, 246)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgb(59, 130, 246)'
+                    }]
+                },
+                options: {
+                    scales: {
+                        r: {
+                            angleLines: { display: false },
+                            suggestedMin: 0,
+                            suggestedMax: 1
+                        }
+                    }
+                }
+            });
+
+            // 2. ECG Line Chart
+            if (dataViz.ecg) {
+                const ctxEcg = document.getElementById('ecgChart').getContext('2d');
+                const signal = dataViz.ecg.processed_signal.slice(0, 500); // First 500 points
+                diagnosisCharts.ecg = new Chart(ctxEcg, {
+                    type: 'line',
+                    data: {
+                        labels: Array.from({ length: signal.length }, (_, i) => i),
+                        datasets: [{
+                            label: 'Normalized Voltage',
+                            data: signal,
+                            borderColor: '#EC4899',
+                            tension: 0.1,
+                            pointRadius: 0
+                        }]
+                    },
+                    options: {
+                        scales: { x: { display: false } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }
+
+            // 3. Glucose Line Chart
+            if (dataViz.glucose) {
+                const ctxGlucose = document.getElementById('glucoseChart').getContext('2d');
+                const signal = dataViz.glucose.processed_signal;
+                diagnosisCharts.glucose = new Chart(ctxGlucose, {
+                    type: 'line',
+                    data: {
+                        labels: Array.from({ length: signal.length }, (_, i) => i),
+                        datasets: [{
+                            label: 'Glucose (Norm)',
+                            data: signal,
+                            borderColor: '#10B981',
+                            tension: 0.4,
+                            pointRadius: 0
+                        }]
+                    },
+                    options: {
+                        scales: { x: { display: false } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }
+
+            // 4. Handwriting Scatter Chart
+            if (dataViz.handwriting) {
+                const ctxHand = document.getElementById('handwritingChart').getContext('2d');
+                const x = dataViz.handwriting.features[0];
+                const y = dataViz.handwriting.features[1];
+                // Downsample for performance if needed, though 500 points is fine
+                const scatterData = x.map((xv, i) => ({ x: xv, y: y[i] }));
+
+                diagnosisCharts.handwriting = new Chart(ctxHand, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'Handwriting Path',
+                            data: scatterData,
+                            backgroundColor: '#6366F1'
+                        }]
+                    },
+                    options: {
+                        scales: { x: { display: false }, y: { display: false } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }
+        }
+
+        function getRiskColor(risk) {
+            if (risk < 0.3) return '#10B981';
+            if (risk < 0.7) return '#F59E0B';
+            return '#EF4444';
+        }
+
+        function getRiskClass(risk) {
+            if (risk < 0.3) return 'risk-low';
+            if (risk < 0.7) return 'risk-moderate';
+            return 'risk-high';
+        }
+
+        function getRiskLevel(risk) {
+            if (risk < 0.3) return 'Low';
+            if (risk < 0.7) return 'Moderate';
+            return 'High';
+        }
+
+        function showPairDeviceModal() {
+            alert('Device pairing modal would open here. For demo, devices are pre-paired.');
+        }
+
+        // Load data on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            loadPatientData();
+            loadDevices();
+        });
+    </script>
+</body>
+
+</html>
