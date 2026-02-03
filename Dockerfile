@@ -12,14 +12,19 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
+    gfortran \
+    libopenblas-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file first to leverage Docker cache
 COPY backend/requirements.txt /app/backend/requirements.txt
+COPY backend/requirements-optional.txt /app/backend/requirements-optional.txt
 
 # Install python dependencies
 WORKDIR /app/backend
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-optional.txt
 
 # Copy the current directory contents into the container at /app
 COPY . /app/

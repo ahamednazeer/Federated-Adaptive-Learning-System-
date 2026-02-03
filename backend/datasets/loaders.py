@@ -8,6 +8,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import json
+from scipy import signal
 
 class BaseDatasetLoader:
     """Base class for all dataset loaders"""
@@ -21,7 +22,7 @@ class BaseDatasetLoader:
         """Load dataset into memory"""
         raise NotImplementedError
     
-    def get_sample(self, patient_id: Optional[int] = None) -> Dict:
+    def get_sample(self, patient_id: Optional[int] = None, medical_history: str = "") -> Dict:
         """Get a single sample (simulates real-time data collection)"""
         raise NotImplementedError
     
@@ -91,7 +92,7 @@ class PTBXLLoader(BaseDatasetLoader):
         })
         self.use_scipy = False
     
-    def get_sample(self, patient_id: Optional[int] = None) -> Dict:
+    def get_sample(self, patient_id: Optional[int] = None, medical_history: str = "") -> Dict:
         """Get ECG waveform sample"""
         if self.data is None:
             self.load()
@@ -100,6 +101,13 @@ class PTBXLLoader(BaseDatasetLoader):
         sampling_rate = 500
         duration = 10
         num_samples = sampling_rate * duration
+        num_samples = sampling_rate * duration
+        
+        # Ensure determinism but variation based on history
+        if patient_id is not None:
+            # simple hash of the history string to vary the seed
+            history_hash = sum(ord(c) for c in medical_history) if medical_history else 0
+            np.random.seed(patient_id + history_hash)
         
         if getattr(self, 'use_scipy', False):
             # Use real data from Scipy
@@ -121,12 +129,23 @@ class PTBXLLoader(BaseDatasetLoader):
             # Generate synthetic ECG waveform
             t = np.linspace(0, duration, num_samples)
             
-            # Simulate normal sinus rhythm with some variation
-            heart_rate = np.random.uniform(60, 100)  # BPM
+            # Simulate normal sinus rhythm (Healthy baseline)
+            heart_rate = np.random.uniform(60, 80)  # BPM (Healthy)
+            
+            # BIAS: If history suggests heart issues, adjust heart rate or waveform
+            if 'cardiac' in medical_history.lower() or 'heart' in medical_history.lower() or 'cad' in medical_history.lower() or 'coronary' in medical_history.lower():
+                # Simulate Higher HR or Irregularity
+                heart_rate = np.random.uniform(90, 130)  # Tachycardia
+            
             ecg_signal = self._generate_ecg_waveform(t, heart_rate)
             
+            # BIAS: Add noise/irregularity
+            noise_level = 0.02  # Low noise (Healthy)
+            if 'arrhythmia' in medical_history.lower() or 'fibrillation' in medical_history.lower():
+                noise_level = 0.2
+            
             # Add noise
-            noise = np.random.normal(0, 0.05, num_samples)
+            noise = np.random.normal(0, noise_level, num_samples)
             ecg_signal += noise
         
         return {
@@ -192,7 +211,7 @@ class UCIVoiceLoader(BaseDatasetLoader):
             'status': np.random.choice([0, 1], num_samples)
         })
     
-    def get_sample(self, patient_id: Optional[int] = None) -> Dict:
+    def get_sample(self, patient_id: Optional[int] = None, medical_history: str = "") -> Dict:
         """Get voice features sample"""
         if self.data is None:
             self.load()
@@ -201,11 +220,22 @@ class UCIVoiceLoader(BaseDatasetLoader):
         num_mfcc = 13
         num_frames = 100
         
+        # Ensure determinism but variation based on history
+        if patient_id is not None:
+            history_hash = sum(ord(c) for c in medical_history) if medical_history else 0
+            np.random.seed(patient_id + history_hash)
+        
         # Generate synthetic MFCCs
         mfcc = np.random.randn(num_mfcc, num_frames)
         
         # Add tremor characteristics for Parkinson's simulation
-        has_tremor = np.random.random() > 0.5
+        # Default: Very low chance of random tremor in healthy people
+        has_tremor = np.random.random() > 0.95
+        
+        # BIAS: Force tremor if Parkinson's in history
+        if 'parkinson' in medical_history.lower():
+            has_tremor = True
+            
         if has_tremor:
             tremor_freq = np.random.uniform(4, 6)  # Hz (typical Parkinson's tremor)
             t = np.linspace(0, 3, num_frames)
@@ -237,22 +267,44 @@ class HandwritingSyntheticLoader(BaseDatasetLoader):
         print("✓ Synthetic handwriting generator ready")
         self.data = True
     
-    def get_sample(self, patient_id: Optional[int] = None) -> Dict:
+    def get_sample(self, patient_id: Optional[int] = None, medical_history: str = "") -> Dict:
         """Generate synthetic handwriting sample"""
         # Simulate spiral drawing task
         num_points = 500
+        
+        # Ensure determinism but variation based on history
+        if patient_id is not None:
+            history_hash = sum(ord(c) for c in medical_history) if medical_history else 0
+            np.random.seed(patient_id + history_hash)
+            
         t = np.linspace(0, 4 * np.pi, num_points)
         
         # Base spiral
         r = t / (4 * np.pi)
         x = r * np.cos(t)
+        r = t / (4 * np.pi)
+        x = r * np.cos(t)
         y = r * np.sin(t)
         
+        # Add baseline natural variation (everyone writes differently)
+        x += np.random.normal(0, 0.005, num_points)
+        y += np.random.normal(0, 0.005, num_points)
+        
         # Add tremor if simulating Parkinson's
-        has_tremor = np.random.random() > 0.6
+        # Default: Very low chance of random tremor in healthy people
+        has_tremor = np.random.random() > 0.95
+        
+        # BIAS: Force tremor if Parkinson's in history
+        if 'parkinson' in medical_history.lower():
+            has_tremor = True
+            
         if has_tremor:
             tremor_freq = np.random.uniform(4, 7)
             tremor_amplitude = np.random.uniform(0.02, 0.05)
+            # Enhance tremor for known cases
+            if 'parkinson' in medical_history.lower():
+                tremor_amplitude *= 1.5
+                
             tremor_x = tremor_amplitude * np.sin(2 * np.pi * tremor_freq * t)
             tremor_y = tremor_amplitude * np.cos(2 * np.pi * tremor_freq * t)
             x += tremor_x
@@ -303,21 +355,39 @@ class WESADLoader(BaseDatasetLoader):
         print("  Creating synthetic wearable data...")
         self.data = True
     
-    def get_sample(self, patient_id: Optional[int] = None) -> Dict:
+    def get_sample(self, patient_id: Optional[int] = None, medical_history: str = "") -> Dict:
         """Get wearable sensor sample (30-second window)"""
         sampling_rate = 32  # Hz
         duration = 30  # seconds
         num_samples = sampling_rate * duration
         
+        sampling_rate = 32  # Hz
+        duration = 30  # seconds
+        num_samples = sampling_rate * duration
+        
+        # Ensure determinism but variation based on history
+        if patient_id is not None:
+            history_hash = sum(ord(c) for c in medical_history) if medical_history else 0
+            np.random.seed(patient_id + history_hash)
+        
         t = np.linspace(0, duration, num_samples)
         
         # Heart rate (60-100 BPM baseline)
         baseline_hr = np.random.uniform(60, 100)
+        
+        # BIAS: Stress or Anxiety
+        if 'anxiety' in medical_history.lower() or 'stress' in medical_history.lower():
+            baseline_hr += 15  # Elevated HR
+            
         hr = baseline_hr + 5 * np.sin(2 * np.pi * 0.1 * t)  # Respiratory sinus arrhythmia
         hr += np.random.normal(0, 2, num_samples)  # Noise
         
         # Skin conductance (stress indicator)
         baseline_sc = np.random.uniform(2, 10)  # μS
+        
+        if 'anxiety' in medical_history.lower():
+            baseline_sc += 5 # Higher sweating/conductance
+            
         sc = baseline_sc + np.random.normal(0, 0.5, num_samples)
         
         # Accelerometer (movement)
@@ -362,16 +432,27 @@ class OhioT1DMLoader(BaseDatasetLoader):
         print("  Creating synthetic glucose data...")
         self.data = True
     
-    def get_sample(self, patient_id: Optional[int] = None) -> Dict:
+    def get_sample(self, patient_id: Optional[int] = None, medical_history: str = "") -> Dict:
         """Get CGM sample (24 hours, 5-minute intervals = 288 readings)"""
         num_readings = 288
         interval_minutes = 5
         
+        # Ensure determinism but variation based on history
+        if patient_id is not None:
+            history_hash = sum(ord(c) for c in medical_history) if medical_history else 0
+            np.random.seed(patient_id + history_hash)
+        
         # Simulate daily glucose pattern
         t = np.linspace(0, 24, num_readings)
         
-        # Baseline glucose (mg/dL)
-        baseline = np.random.uniform(100, 140)
+        # Baseline glucose (mg/dL) - Healthy range defaults
+        baseline = np.random.uniform(70, 100)
+        
+        # BIAS: Diabetes
+        if 'diabetes' in medical_history.lower():
+            baseline = np.random.uniform(140, 200) # Hyperglycemia baseline
+        elif 'hypoglycemia' in medical_history.lower() or 'insulin' in medical_history.lower():
+            baseline = np.random.uniform(70, 100) # Lower baseline
         
         # Meal spikes (breakfast, lunch, dinner)
         meal_times = [7, 12, 19]

@@ -25,6 +25,12 @@ class PatientConsent(BaseModel):
     consent_federated_learning: bool
 
 
+class PatientUpdate(BaseModel):
+    name: Optional[str] = None
+    age: Optional[int] = None
+    medical_history: Optional[str] = None
+    
+    
 class PatientResponse(BaseModel):
     id: int
     name: str
@@ -76,7 +82,48 @@ async def update_consent(patient_id: int, consent: PatientConsent):
             )
             await db.commit()
             
+            
             return {"message": "Consent updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/{patient_id}")
+async def update_patient(patient_id: int, patient_update: PatientUpdate):
+    """Update patient information"""
+    try:
+        async with aiosqlite.connect("database/federated_learning.db") as db:
+            # Build query dynamically based on provided fields
+            update_fields = []
+            params = []
+            
+            if patient_update.name is not None:
+                update_fields.append("name = ?")
+                params.append(patient_update.name)
+            
+            if patient_update.age is not None:
+                update_fields.append("age = ?")
+                params.append(patient_update.age)
+                
+            if patient_update.medical_history is not None:
+                update_fields.append("medical_history = ?")
+                params.append(patient_update.medical_history)
+            
+            if not update_fields:
+                return {"message": "No fields to update"}
+            
+            params.append(patient_id)
+            query = f"UPDATE patients SET {', '.join(update_fields)} WHERE id = ?"
+            
+            cursor = await db.execute(query, tuple(params))
+            if cursor.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Patient not found")
+                
+            await db.commit()
+            
+            return {"message": "Patient updated successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

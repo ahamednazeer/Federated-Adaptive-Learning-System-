@@ -152,6 +152,15 @@ async def run_diagnosis(patient_id: int):
         
         if not devices:
             raise HTTPException(status_code=400, detail="No devices paired for patient")
+            
+        # Get patient medical history to bias synthetic data
+        medical_history = ""
+        async with aiosqlite.connect("database/federated_learning.db") as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT medical_history FROM patients WHERE id = ?", (patient_id,))
+            patient = await cursor.fetchone()
+            if patient and patient['medical_history']:
+                medical_history = patient['medical_history']
         
         # Load models
         models = get_models()
@@ -164,7 +173,8 @@ async def run_diagnosis(patient_id: int):
             # Load dataset and get sample
             loader = DatasetFactory.create_loader(device['dataset_name'])
             loader.load()
-            sample = loader.get_sample(patient_id)
+            # Pass medical_history to loader to bias synthetic data generation
+            sample = loader.get_sample(patient_id, medical_history=medical_history)
             
             # Preprocess
             preprocessor = PreprocessorFactory.create_preprocessor(device['device_type'])

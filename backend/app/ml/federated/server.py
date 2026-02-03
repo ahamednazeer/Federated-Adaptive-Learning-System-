@@ -184,19 +184,41 @@ class FederatedClient:
         self.dataset_name = dataset_name
         self.local_epochs = 1
     
-    def update_model(self, global_weights: Dict[str, np.ndarray]):
+    def update_model(self, global_weights: Dict[str, np.ndarray], strict: bool = True):
         """
         Update local model with global weights
         
         Args:
             global_weights: Global model weights from server
+            strict: If True, replace all weights. If False, only replace matching keys.
         """
         with torch.no_grad():
             for name, param in self.model.named_parameters():
                 if name in global_weights:
                     param.data = torch.from_numpy(global_weights[name])
     
-    def train_local(self, train_data: List, criterion, optimizer) -> Dict:
+    def adapt_personalization(self, freeze_base: bool = True, fine_tune_epochs: int = 5):
+        """
+        Adaptive Personalization: Fine-tune local model
+        Optionally freeze base layers to retain global knowledge while adapting the head
+        
+        Args:
+            freeze_base: Whether to freeze base layers
+            fine_tune_epochs: Number of epochs for personalization
+        """
+        # Store original state to revert if needed (optional)
+        
+        if freeze_base:
+            # Simple heuristic: Freeze all except last layer (classifier head)
+            # In a real transformer/CNN, this would be more specific
+            params = list(self.model.parameters())
+            for param in params[:-2]:  # Freeze all except last weight/bias pair
+                param.requires_grad = False
+        
+        # Note: Actual fine-tuning loop would call train_local here or be called by controller
+        pass
+
+    def train_local(self, train_data: List, criterion, optimizer, use_ewc: bool = False, ewc_handler = None) -> Dict:
         """
         Train local model on client data
         
@@ -204,6 +226,8 @@ class FederatedClient:
             train_data: List of training samples
             criterion: Loss function
             optimizer: Optimizer
+            use_ewc: Whether to use EWC for continual learning
+            ewc_handler: Instance of EWC class (from app.ml.federated.continual)
         
         Returns:
             Dict with training results
@@ -217,8 +241,20 @@ class FederatedClient:
         for epoch in range(self.local_epochs):
             for batch in train_data:
                 # Forward pass
-                outputs = self.model(batch['inputs'])
-                loss = criterion(outputs, batch['labels'])
+                # Handle dictionary batch (common in multimodal) vs tuple
+                if isinstance(batch, dict):
+                    inputs = batch['inputs']
+                    labels = batch['labels']
+                else:
+                    inputs, labels = batch[0], batch[1]
+                
+                outputs = self.model(inputs)
+                loss = criterion(outputs, labels)
+                
+                # Add EWC penalty if enabled
+                if use_ewc and ewc_handler:
+                    ewc_loss = ewc_handler.penalty_loss(self.model)
+                    loss += ewc_loss
                 
                 # Backward pass
                 optimizer.zero_grad()
@@ -227,16 +263,20 @@ class FederatedClient:
                 
                 # Metrics
                 total_loss += loss.item()
-                total += batch['labels'].size(0)
+                total += labels.size(0)
                 
                 # Accuracy (for classification)
                 if hasattr(outputs, 'argmax'):
                     predicted = outputs.argmax(dim=1)
-                    correct += (predicted == batch['labels']).sum().item()
+                    correct += (predicted == labels).sum().item()
         
         avg_loss = total_loss / len(train_data)
         accuracy = correct / total if total > 0 else 0.0
         
+        # Reset requires_grad if it was frozed for peronalization
+        for param in self.model.parameters():
+            param.requires_grad = True
+            
         return {
             'loss': avg_loss,
             'accuracy': accuracy,

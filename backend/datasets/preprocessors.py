@@ -333,9 +333,14 @@ class WearablePreprocessor:
         stress_features = self.compute_stress_features(sc)
         activity_features = self.compute_activity_features(acc_x, acc_y, acc_z)
         
-        # Normalize signals
-        hr_norm = (hr - np.mean(hr)) / (np.std(hr) + 1e-8)
-        sc_norm = (sc - np.mean(sc)) / (np.std(sc) + 1e-8)
+        # Normalize signals (Use fixed scaling to preserve absolute levels)
+        # HR: Map 40-200 BPM to approx -1 to 1 range (using 0-1 scaling is safer for ReLU)
+        # Actually standard scaling is usually best for DL, but we want to preserve the OFFSET
+        # So we subtract a FIXED mean (e.g. 70) rather than the sample mean
+        hr_norm = (hr - 70) / 30.0  # 100bpm -> 1.0, 70bpm -> 0.0, 130bpm -> 2.0
+        
+        # SC: Map 0-20 muS
+        sc_norm = (sc - 5) / 5.0
         
         # Stack features
         features = np.stack([hr_norm, sc_norm, acc_x, acc_y, acc_z], axis=0)
@@ -422,8 +427,9 @@ class GlucosePreprocessor:
         # Smooth signal
         glucose_smooth = self.smooth_signal(glucose_interp)
         
-        # Normalize
-        glucose_norm = (glucose_smooth - np.mean(glucose_smooth)) / (np.std(glucose_smooth) + 1e-8)
+        # Normalize (Use fixed scaling to preserve hyperglycemia signal)
+        # Map 0-400 mg/dL to roughly 0-1 range
+        glucose_norm = glucose_smooth / 200.0  # 100 -> 0.5, 200 -> 1.0
         
         # Compute features
         glycemic_features = self.compute_glycemic_features(glucose_smooth)
